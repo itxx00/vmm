@@ -1,0 +1,216 @@
+#!/bin/bash
+#
+# before you can use this script, you must install these packages:
+# apt-get install libvirt-daemon libvirt-clients dnsmasq ebtables bridge-utils \
+# libvirt-daemon-system virt-manager libguestfs-tools qemu-utils
+#
+MIRROR=http://cloud.centos.org/centos/7/images
+IMG=CentOS-7-x86_64-GenericCloud.qcow2
+DROOT=/data
+CROOT=$HOME/.vmm
+VMLIST=$CROOT/vms
+VmDataDiskSize=10G
+IPSTART=192.168.199.2
+IPEND=192.168.199.99
+GATEWAY=192.168.199.1
+NETMASK=255.255.255.0
+DNS1=114.114.114.114
+DNS2=114.114.115.115
+
+init_env() {
+    [ -d $DROOT ] || {
+        echo "cannot find $DROOT dir, you need to create it"
+        return 1
+    }
+    [ -d $DROOT/img ] || mkdir $DROOT/img
+    [ -d $CROOT ] || mkdir $CROOT
+    touch $VMLIST
+    brctl show|grep -q br0
+    [ $? -eq 0 ] || {
+        echo "cannot find br0,you need to create it"
+        return 1
+    }
+    [ -f $DROOT/img/$IMG ] || {
+        cd $DROOT/img &&
+        wget -c $MIRROR/$IMG.xz
+        xz -d $IMG.xz
+    }
+}
+
+inject_pwd() {
+    local vm="$1"
+    local user="$2"
+    local pwd="$3"
+    hash=$(python3 -c "import crypt; print(crypt.crypt('$pwd', crypt.mksalt(crypt.METHOD_SHA512)))")
+    es_hash=$(echo $hash|sed 's#\/#\\/#g;s#\$#\\$#g')
+    virt-edit -d $vm /etc/shadow -e "s/^$user:.*?:/$user:$es_hash:/"
+}
+
+inject_key() {
+    local vm="$1"
+    local user="$2"
+    local key=~/.ssh/id_rsa.pub
+    [ -f $key ] || {
+        echo "cannot find pub key,use ssh-keygen to create key."
+        return 1
+    }
+    workd=~/.tmpworkdir.$RANDOM/
+    mkdir $workd && cd $workd
+    mkdir .ssh && chmod 700 .ssh
+    cp $key .ssh/authorized_keys
+    chmod 600 .ssh/authorized_keys
+    homedir=/home/$user
+    [[ $user = root ]] && homedir=/root
+    virt-copy-in -d $vm .ssh $homedir/
+    cd ~ && rm -fr $workd
+}
+
+define_vm() {
+    local vm="$1"
+    local tmpxml=$(mktemp)
+    cat >>$tmpxml<<EOF
+<domain type='qemu'>
+  <name>$vm</name>
+  <memory unit='KiB'>2097152</memory>
+  <currentMemory unit='KiB'>2097152</currentMemory>
+  <vcpu placement='static'>2</vcpu>
+  <os>
+    <type arch='x86_64'>hvm</type>
+    <boot dev='hd'/>
+  </os>
+  <features>
+    <acpi/>
+    <apic/>
+    <pae/>
+  </features>
+  <clock offset='utc'>
+    <timer name='rtc' tickpolicy='catchup' track='guest'/>
+  </clock>
+  <devices>
+    <emulator>/usr/bin/kvm</emulator>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2'/>
+      <source file='$DROOT/img/$vm.root'/>
+      <target dev='vda' bus='virtio'/>
+    </disk>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2'/>
+      <source file='$DROOT/img/$vm.data'/>
+      <target dev='vdb' bus='virtio'/>
+    </disk>
+    <interface type='bridge'>
+      <source bridge='br0'/>
+      <model type='virtio'/>
+    </interface>
+    <graphics type='vnc' port='-1' autoport='yes'/>
+  </devices>
+</domain>
+EOF
+    virsh define $tmpxml >/dev/null
+    [ $? -eq 0 ] || {
+        echo "failed to define $vm"
+        /bin/rm $tmpxml
+        return 1
+    }
+    /bin/rm $tmpxml
+}
+
+create_disk() {
+    local vm="$1"
+    cd $DROOT/img || {
+        echo "cannot find $DROOT/img"
+        return 1
+    }
+    ( [ -f $vm.root ] || [ -f $vm.data ] )  && {
+        echo "$vm disk exist,cannot continue"
+        return 1
+    }
+    qemu-img create -f qcow2 -b $IMG $vm.root >/dev/null || return 1
+    qemu-img create -f qcow2 $vm.data $VmDataDiskSize >/dev/null || return 1
+}
+
+INET_ATON() {
+    local IFS=. ip
+    ip=($*)
+    echo $(((ip[0] << 24) + (ip[1] << 16) + (ip[2] << 8) + ip[3]))
+}
+
+INET_NTOA() {
+    echo $(($1 >> 24)).$((($1 >> 16) % 256)).$((($1 >> 8) % 256)).$(($1 % 256))
+}
+
+gen_ip() {
+    local ip
+    local ipstart=$(INET_ATON $IPSTART)
+    local ipend=$(INET_ATON $IPEND)
+    for ((i = $ipstart; i <= $ipend; i++)); do
+        p=$(INET_NTOA $i)
+        if ! grep -wq "$p" $VMLIST; then
+            ip=$p
+            break
+        fi
+    done
+    [[ -n $ip ]] || return 1
+    echo $ip
+}
+
+inject_netconf() {
+    local vm="$1"
+    local ip="$2"
+    workd=~/.tmpworkdir.$RANDOM/
+    mkdir $workd && cd $workd
+    cat >>ifcfg-eth0<<EOF
+DEVICE=eth0
+BOOTPROTO=none
+ONBOOT=yes
+TYPE=Ethernet
+PEERDNS=no
+IPV6INIT=no
+IPADDR=$ip
+GATEWAY=$GATEWAY
+NETMASK=$NETMASK
+DNS1=$DNS1
+DNS2=$DNS2
+EOF
+    virt-copy-in -d $vm ifcfg-eth0 /etc/sysconfig/network-scripts/
+    cd ~ && rm -fr $workd
+}
+
+die() {
+    echo "last step failed"
+    exit 1
+}
+
+vm=$1
+act=$2
+[[ -n "$vm" ]] || {
+    virsh list --all
+    exit
+}
+
+
+virsh domstate $vm &>>/dev/null && {
+    if [[ $act = del ]]; then
+        virsh destroy "$vm"
+        virsh undefine "$vm"
+        rm $DROOT/img/$vm.*
+        sed -i "/^$vm /d" $VMLIST
+        echo "$vm removed"
+        exit
+    fi
+    echo "$vm already created"
+    virsh dominfo "$vm"
+    exit
+}
+
+init_env || die
+define_vm "$vm" || die
+create_disk "$vm" || die
+inject_key "$vm" root || die
+#inject_pwd "$vm" root centos7
+ip=$(gen_ip || die)
+inject_netconf "$vm" "$ip" || die
+echo "$vm $ip" >>$VMLIST
+virsh start "$vm" >/dev/null
+echo "$ip"
+
