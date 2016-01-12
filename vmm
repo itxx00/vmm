@@ -176,6 +176,23 @@ EOF
     cd ~ && rm -fr $workd
 }
 
+update_hosts() {
+    local act="$1"
+    local vm="$2"
+    local ip="$3"
+    if [[ $act = d ]]; then
+        sed -i "/ $vm$/d" /etc/hosts
+        sed -i "/^$vm /d" $VMLIST
+        return
+    fi
+    if grep -q " $vm$" /etc/hosts; then
+        echo "err, $vm already added to hosts"
+        return 1
+    fi
+    echo "$ip $vm" >>/etc/hosts
+    echo "$vm $ip" >>$VMLIST
+}
+
 die() {
     echo "last step failed"
     exit 1
@@ -194,7 +211,7 @@ virsh domstate $vm &>>/dev/null && {
         virsh destroy "$vm"
         virsh undefine "$vm"
         rm $DROOT/img/$vm.*
-        sed -i "/^$vm /d" $VMLIST
+        update_hosts d $vm
         echo "$vm removed"
         exit
     fi
@@ -210,7 +227,7 @@ inject_key "$vm" root || die
 #inject_pwd "$vm" root centos7
 ip=$(gen_ip || die)
 inject_netconf "$vm" "$ip" || die
-echo "$vm $ip" >>$VMLIST
+update_hosts a "$vm" "$ip"
 virsh start "$vm" >/dev/null
 echo "$ip"
 
