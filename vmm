@@ -17,6 +17,11 @@ NETMASK=255.255.255.0
 DNS1=114.114.114.114
 DNS2=114.114.115.115
 
+usage() {
+    echo "usage: $(basename $0) <init|rm|list> [vm]"
+    exit
+}
+
 init_env() {
     [ -d $DROOT ] || {
         echo "cannot find $DROOT dir, you need to create it"
@@ -198,36 +203,51 @@ die() {
     exit 1
 }
 
-vm=$1
-act=$2
-[[ -n "$vm" ]] || {
-    virsh list --all
-    exit
+del() {
+    local vm=$1
+    virsh domstate $vm &>>/dev/null || {
+        echo "already removed"
+        return
+    }
+    virsh destroy "$vm"
+    virsh undefine "$vm"
+    rm $DROOT/img/$vm.*
+    update_hosts d $vm
+    echo "$vm removed"
 }
 
-
-virsh domstate $vm &>>/dev/null && {
-    if [[ $act = del ]]; then
-        virsh destroy "$vm"
-        virsh undefine "$vm"
-        rm $DROOT/img/$vm.*
-        update_hosts d $vm
-        echo "$vm removed"
-        exit
-    fi
-    echo "$vm already created"
-    virsh dominfo "$vm"
-    exit
+add() {
+    local vm=$1
+    local ip
+    virsh domstate $vm &>>/dev/null && {
+        echo "already exist"
+        return
+    }
+    init_env || die
+    define_vm "$vm" || die
+    create_disk "$vm" || die
+    inject_key "$vm" root || die
+    #inject_pwd "$vm" root centos7
+    ip=$(gen_ip || die)
+    inject_netconf "$vm" "$ip" || die
+    update_hosts a "$vm" "$ip"
+    virsh start "$vm" >/dev/null
+    echo "$ip"
 }
 
-init_env || die
-define_vm "$vm" || die
-create_disk "$vm" || die
-inject_key "$vm" root || die
-#inject_pwd "$vm" root centos7
-ip=$(gen_ip || die)
-inject_netconf "$vm" "$ip" || die
-update_hosts a "$vm" "$ip"
-virsh start "$vm" >/dev/null
-echo "$ip"
+act=$1
+vm=$2
+[[ -n "$act" ]] || usage
+case $act in
+    add|del)
+        [ $# -eq 2 ] || usage
+        $act $vm
+        ;;
+    list)
+        virsh list --all
+        ;;
+    *)
+        usage
+        ;;
+esac
 

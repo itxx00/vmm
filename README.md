@@ -7,11 +7,11 @@ VMM
 ---------
 
 ```
-$ vmm vm1        #创建vm
+$ vmm add vm1     #创建vm
 
-$ vmm vm1 del    #删除vm
+$ vmm del vm1     #删除vm
 
-$ vmm            #查看所有vm
+$ vmm list        #查看所有vm
 
 ```
 
