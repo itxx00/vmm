@@ -1,9 +1,7 @@
 #!/bin/bash
 #
-# before you can use this script, you must install these packages:
-# apt-get install libvirt-daemon libvirt-clients dnsmasq ebtables bridge-utils \
-# libvirt-daemon-system virt-manager libguestfs-tools qemu-utils
 #
+VERSION=0.1
 MIRROR=http://cloud.centos.org/centos/7/images
 IMG=CentOS-7-x86_64-GenericCloud.qcow2
 DROOT=/data
@@ -18,7 +16,32 @@ DNS1=114.114.114.114
 DNS2=114.114.115.115
 
 usage() {
-    echo "usage: $(basename $0) <init|rm|list> [vm]"
+    echo "
+Usage: vmm [OPTIONS] COMMAND [arg...]
+
+Create and manage virtual machines.
+
+Version: $VERSION
+
+Options:
+  --help, -h                        show help
+  --version, -v                     print the version
+
+Commands:
+  active        Print which vm is active
+  create        Create a vm
+  inspect       Inspect information about a vm
+  ip            Get the IP address of a vm
+  kill          Kill a vm
+  ls            List vms
+  restart       Restart a vm
+  rm            Remove a vm
+  ssh           Log into or run a command on a vm with SSH.
+  start         Start a vm
+  status        Get the status of a vm
+  stop          Stop a vm
+  console       Open console of a vm
+"
     exit
 }
 
@@ -34,6 +57,16 @@ init_env() {
     [ $? -eq 0 ] || {
         echo "cannot find br0,you need to create it"
         return 1
+    }
+    [[ -x $(which virsh) ]] || {
+        if grep -qi 'ubuntu\|debian' /etc/issue; then
+            apt-get -y install libvirt-daemon libvirt-clients dnsmasq ebtables \
+                bridge-utils libvirt-daemon-system virt-manager \
+                libguestfs-tools qemu-utils
+        else
+            echo "system not supported yet"
+            return 1
+        fi
     }
     [ -f $DROOT/img/$IMG ] || {
         cd $DROOT/img &&
@@ -54,15 +87,15 @@ inject_pwd() {
 inject_key() {
     local vm="$1"
     local user="$2"
-    local key=~/.ssh/id_rsa.pub
-    [ -f $key ] || {
-        echo "cannot find pub key,use ssh-keygen to create key."
-        return 1
+    local sshkey=$CROOT/id_rsa
+    [ -f $sshkey ] || {
+        cd $CROOT
+        ssh-keygen -q -N "" -t rsa -f id_rsa
     }
     workd=~/.tmpworkdir.$RANDOM/
     mkdir $workd && cd $workd
     mkdir .ssh && chmod 700 .ssh
-    cp $key .ssh/authorized_keys
+    cp ${sshkey}.pub .ssh/authorized_keys
     chmod 600 .ssh/authorized_keys
     homedir=/home/$user
     [[ $user = root ]] && homedir=/root
@@ -181,20 +214,18 @@ EOF
     cd ~ && rm -fr $workd
 }
 
-update_hosts() {
+update_conf() {
     local act="$1"
     local vm="$2"
     local ip="$3"
     if [[ $act = d ]]; then
-        sed -i "/ $vm$/d" /etc/hosts
         sed -i "/^$vm /d" $VMLIST
         return
     fi
-    if grep -q " $vm$" /etc/hosts; then
+    if grep -q "^$vm " $VMLIST; then
         echo "err, $vm already added to hosts"
         return 1
     fi
-    echo "$ip $vm" >>/etc/hosts
     echo "$vm $ip" >>$VMLIST
 }
 
@@ -203,23 +234,23 @@ die() {
     exit 1
 }
 
-del() {
+vm_rm() {
     local vm=$1
-    virsh domstate $vm &>>/dev/null || {
+    virsh domstate $vm >/dev/null 2>&1 || {
         echo "already removed"
         return
     }
     virsh destroy "$vm"
     virsh undefine "$vm"
     rm $DROOT/img/$vm.*
-    update_hosts d $vm
+    update_conf d $vm
     echo "$vm removed"
 }
 
-add() {
+vm_create() {
     local vm=$1
     local ip
-    virsh domstate $vm &>>/dev/null && {
+    virsh domstate $vm >/dev/null 2>&1 && {
         echo "already exist"
         return
     }
@@ -230,21 +261,92 @@ add() {
     #inject_pwd "$vm" root centos7
     ip=$(gen_ip || die)
     inject_netconf "$vm" "$ip" || die
-    update_hosts a "$vm" "$ip"
+    update_conf a "$vm" "$ip"
     virsh start "$vm" >/dev/null
     echo "$ip"
+}
+
+vm_getip() {
+    local vm=$1
+    grep "^$vm " $VMLIST | awk '{print $2}'
+}
+
+vm_ssh() {
+    local vm=$1
+    local user=$2
+    local sshkey=$CROOT/id_rsa
+    local ip=$(vm_getip $vm)
+    ssh -i $sshkey $user@$ip
+}
+
+vm_inspect() {
+    local vm=$1
+    grep "^$vm " $VMLIST
+}
+
+vm_console() {
+    local vm=$1
+    local vncport=$(virsh vncdisplay $vm)
+    [ $? -eq 0 ] || {
+        echo "err: cannot get vnc port"
+        return 1
+    }
+    local cli=$(which vncviewer)
+    [[ -x $cli ]] && {
+        $cli 127.0.0.1${vncport} >/dev/null 2>&1 &
+        return
+    }
+    echo "127.0.0.1${vncport} cannot auto connect to console"
 }
 
 act=$1
 vm=$2
 [[ -n "$act" ]] || usage
 case $act in
-    add|del)
+    create)
         [ $# -eq 2 ] || usage
-        $act $vm
+        vm_create $vm
         ;;
-    list)
+    rm)
+        [ $# -eq 2 ] || usage
+        vm_rm $vm
+        ;;
+    ls)
         virsh list --all
+        ;;
+    active)
+        virsh list
+        ;;
+    start|stop|restart)
+        [ $# -eq 2 ] || usage
+        virsh $act $vm
+        ;;
+    status)
+        [ $# -eq 2 ] || usage
+        virsh domstate $vm
+        ;;
+    kill)
+        [ $# -eq 2 ] || usage
+        virsh destroy $vm
+        ;;
+    inspect)
+        [ $# -eq 2 ] || usage
+        vm_inspect $vm
+        ;;
+    ip)
+        [ $# -eq 2 ] || usage
+        vm_getip $vm
+        ;;
+    ssh)
+        [ $# -eq 2 ] || usage
+        vm_ssh $vm root
+        ;;
+    console)
+        [ $# -eq 2 ] || usage
+        vm_console $vm
+        ;;
+    -v|--version)
+        echo $VERSION
         ;;
     *)
         usage

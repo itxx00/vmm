@@ -7,13 +7,15 @@ VMM
 ---------
 
 ```
-$ vmm add vm1     #创建vm
+  vmm create vm1  创建名为vm1的虚拟机
+  vmm ssh vm1     自动SSH登陆vm1
+  vmm rm vm1      销毁vm1的配置和存储
+  vmm ls          查看所有虚拟机
 
-$ vmm del vm1     #删除vm
-
-$ vmm list        #查看所有vm
 
 ```
+
+更多选项使用 --help 查看帮助信息
 
 环境依赖
 ---------
@@ -26,3 +28,5 @@ TODO
 -----
 
 1 vm系统默认提供 centos7 模板，未来可能还会用到ubuntu ?
+
+2 自动创建内网bridge，不依赖br0，用nat方式连接外网？
