@@ -276,7 +276,7 @@ vm_ssh() {
     local user=$2
     local sshkey=$CROOT/id_rsa
     local ip=$(vm_getip $vm)
-    ssh -i $sshkey $user@$ip
+    ssh -o StrictHostKeyChecking=no -i $sshkey $user@$ip
 }
 
 vm_inspect() {
