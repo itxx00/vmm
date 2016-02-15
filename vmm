@@ -240,8 +240,8 @@ vm_rm() {
         echo "already removed"
         return
     }
-    virsh destroy "$vm"
-    virsh undefine "$vm"
+    virsh destroy "$vm" >/dev/null
+    virsh undefine "$vm" >/dev/null
     rm $DROOT/img/$vm.*
     update_conf d $vm
     echo "$vm removed"
@@ -293,7 +293,7 @@ vm_console() {
     }
     local cli=$(which vncviewer)
     [[ -x $cli ]] && {
-        $cli 127.0.0.1${vncport} >/dev/null 2>&1 &
+        $cli 127.0.0.1${vncport} >/dev/null &
         return
     }
     echo "127.0.0.1${vncport} cannot auto connect to console"
@@ -317,9 +317,17 @@ case $act in
     active)
         virsh list
         ;;
-    start|stop|restart)
+    start)
         [ $# -eq 2 ] || usage
-        virsh $act $vm
+        virsh start $vm
+        ;;
+    stop)
+        [ $# -eq 2 ] || usage
+        virsh shutdown $vm
+        ;;
+    restart)
+        [ $# -eq 2 ] || usage
+        virsh reboot $vm
         ;;
     status)
         [ $# -eq 2 ] || usage
