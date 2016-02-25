@@ -2,8 +2,10 @@
 #
 #
 VERSION=0.1
-MIRROR=http://cloud.centos.org/centos/7/images
-IMG=CentOS-7-x86_64-GenericCloud.qcow2
+#MIRROR=http://cloud.centos.org/centos/7/images
+MIRROR=http://mirrors.aliyun.com/fedora/releases/23/Cloud/x86_64/Images
+#IMG=CentOS-7-x86_64-GenericCloud.qcow2
+IMG=Fedora-Cloud-Base-23-20151030.x86_64.qcow2
 DROOT=/data
 CROOT=$HOME/.vmm
 VMLIST=$CROOT/vms
@@ -70,8 +72,9 @@ init_env() {
     }
     [ -f $DROOT/img/$IMG ] || {
         cd $DROOT/img &&
-        wget -c $MIRROR/$IMG.xz
-        xz -d $IMG.xz
+        wget -c $MIRROR/$IMG.xz && xz -d $IMG.xz || {
+            wget -c $MIRROR/$IMG
+        }
     }
 }
 
@@ -276,7 +279,7 @@ vm_ssh() {
     local user=$2
     local sshkey=$CROOT/id_rsa
     local ip=$(vm_getip $vm)
-    ssh -o StrictHostKeyChecking=no -i $sshkey $user@$ip
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $sshkey $user@$ip
 }
 
 vm_inspect() {
@@ -287,16 +290,18 @@ vm_inspect() {
 vm_console() {
     local vm=$1
     local vncport=$(virsh vncdisplay $vm)
+    local password=$RANDOM
     [ $? -eq 0 ] || {
         echo "err: cannot get vnc port"
         return 1
     }
     local cli=$(which vncviewer)
+    virsh qemu-monitor-command $vm --hmp change vnc password $password
     [[ -x $cli ]] && {
-        $cli 127.0.0.1${vncport} >/dev/null &
+        echo "127.0.0.1${vncport} password: $password"
+        echo $password | $cli -autopass 127.0.0.1${vncport} &
         return
     }
-    echo "127.0.0.1${vncport} cannot auto connect to console"
 }
 
 act=$1
