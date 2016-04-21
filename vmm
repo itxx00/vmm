@@ -2,10 +2,10 @@
 #
 #
 VERSION=0.1
-#MIRROR=http://cloud.centos.org/centos/7/images
-MIRROR=http://mirrors.aliyun.com/fedora/releases/23/Cloud/x86_64/Images
-#IMG=CentOS-7-x86_64-GenericCloud.qcow2
-IMG=Fedora-Cloud-Base-23-20151030.x86_64.qcow2
+MIRROR=http://cloud.centos.org/centos/7/images
+#MIRROR=http://mirrors.aliyun.com/fedora/releases/23/Cloud/x86_64/Images
+IMG=CentOS-7-x86_64-GenericCloud.qcow2
+#IMG=Fedora-Cloud-Base-23-20151030.x86_64.qcow2
 DROOT=/data
 CROOT=$HOME/.vmm
 VMLIST=$CROOT/vms
@@ -63,8 +63,11 @@ init_env() {
     [[ -x $(which virsh) ]] || {
         if grep -qi 'ubuntu\|debian' /etc/issue; then
             apt-get -y install libvirt-daemon libvirt-clients dnsmasq ebtables \
-                bridge-utils libvirt-daemon-system virt-manager \
+                bridge-utils libvirt-daemon-system \
                 libguestfs-tools qemu-utils
+        elif grep -qi 'fedora\|centos' /etc/os-release; then
+            yum -y install libvirt-daemon libvirt-client dnsmasq ebtables \
+                bridge-utils libguestfs-tools-c qemu-img
         else
             echo "system not supported yet"
             return 1
@@ -75,6 +78,14 @@ init_env() {
         wget -c $MIRROR/$IMG.xz && xz -d $IMG.xz || {
             wget -c $MIRROR/$IMG
         }
+    }
+
+    [ -f /usr/bin/qemu-vmm ] || {
+        [ -f /usr/bin/qemu-kvm ] && \
+            echo -e '#!/bin/sh\nexec /usr/bin/qemu-kvm "$@"' >/usr/bin/qemu-vmm
+        [ -f /usr/bin/kvm  ] && \
+            echo -e '#!/bin/sh\nexec /usr/bin/kvm "$@"' >/usr/bin/qemu-vmm
+        chmod +x /usr/bin/qemu-vmm
     }
 }
 
@@ -128,7 +139,7 @@ define_vm() {
     <timer name='rtc' tickpolicy='catchup' track='guest'/>
   </clock>
   <devices>
-    <emulator>/usr/bin/kvm</emulator>
+    <emulator>/usr/bin/qemu-vmm</emulator>
     <disk type='file' device='disk'>
       <driver name='qemu' type='qcow2'/>
       <source file='$DROOT/img/$vm.root'/>
@@ -257,7 +268,6 @@ vm_create() {
         echo "already exist"
         return
     }
-    init_env || die
     define_vm "$vm" || die
     create_disk "$vm" || die
     inject_key "$vm" root || die
@@ -304,6 +314,7 @@ vm_console() {
     }
 }
 
+init_env || die
 act=$1
 vm=$2
 [[ -n "$act" ]] || usage
