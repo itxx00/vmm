@@ -121,7 +121,7 @@ define_vm() {
     local vm="$1"
     local tmpxml=$(mktemp)
     cat >>$tmpxml<<EOF
-<domain type='qemu'>
+<domain type='kvm'>
   <name>$vm</name>
   <memory unit='KiB'>2097152</memory>
   <currentMemory unit='KiB'>2097152</currentMemory>
@@ -135,6 +135,9 @@ define_vm() {
     <apic/>
     <pae/>
   </features>
+  <cpu mode='host-passthrough'>
+    <topology sockets='1' cores='2' threads='1'/>
+  </cpu>
   <clock offset='utc'>
     <timer name='rtc' tickpolicy='catchup' track='guest'/>
   </clock>
