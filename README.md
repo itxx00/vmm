@@ -27,6 +27,6 @@ VMM
 TODO
 -----
 
-1 vm系统默认提供 centos7 模板，未来可能还会用到ubuntu ?
+支持自定义模版
 
-2 自动创建内网bridge，不依赖br0，用nat方式连接外网？
+支持自定义cpu 内存 磁盘
