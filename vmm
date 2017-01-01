@@ -9,7 +9,7 @@ IMG=CentOS-7-x86_64-GenericCloud.qcow2
 DROOT=/data
 CROOT=$HOME/.vmm
 VMLIST=$CROOT/vms
-VmDataDiskSize=10G
+VmDataDiskSize=50G
 IPSTART=192.168.199.2
 IPEND=192.168.199.99
 GATEWAY=192.168.199.1
@@ -81,11 +81,17 @@ init_env() {
     }
 
     [ -f /usr/bin/qemu-vmm ] || {
-        [ -f /usr/bin/qemu-kvm ] && \
-            echo -e '#!/bin/sh\nexec /usr/bin/qemu-kvm "$@"' >/usr/bin/qemu-vmm
-        [ -f /usr/bin/kvm  ] && \
-            echo -e '#!/bin/sh\nexec /usr/bin/kvm "$@"' >/usr/bin/qemu-vmm
-        chmod +x /usr/bin/qemu-vmm
+        kvm=""
+        [ -f /usr/libexec/qemu-kvm  ] && kvm=/usr/libexec/qemu-kvm
+        [ -f /usr/bin/qemu-kvm ] && kvm=/usr/bin/qemu-kvm
+        [ -f /usr/bin/kvm  ] && kvm=/usr/bin/kvm
+        if [[ -n $kvm ]]; then
+            echo -e "#!/bin/sh\nexec $kvm \"\$@\"" >/usr/bin/qemu-vmm
+            chmod +x /usr/bin/qemu-vmm
+        else
+            echo "cannot find qemu-kvm"
+            return 1
+        fi
     }
 }
 
@@ -123,9 +129,9 @@ define_vm() {
     cat >>$tmpxml<<EOF
 <domain type='kvm'>
   <name>$vm</name>
-  <memory unit='KiB'>2097152</memory>
-  <currentMemory unit='KiB'>2097152</currentMemory>
-  <vcpu placement='static'>2</vcpu>
+  <memory unit='KiB'>8192000</memory>
+  <currentMemory unit='KiB'>8192000</currentMemory>
+  <vcpu placement='static'>4</vcpu>
   <os>
     <type arch='x86_64'>hvm</type>
     <boot dev='hd'/>
@@ -136,7 +142,7 @@ define_vm() {
     <pae/>
   </features>
   <cpu mode='host-passthrough'>
-    <topology sockets='1' cores='2' threads='1'/>
+    <topology sockets='1' cores='4' threads='1'/>
   </cpu>
   <clock offset='utc'>
     <timer name='rtc' tickpolicy='catchup' track='guest'/>
@@ -157,14 +163,13 @@ define_vm() {
       <source bridge='br0'/>
       <model type='virtio'/>
     </interface>
-    <graphics type='vnc' port='-1' autoport='yes'/>
+    <graphics type='vnc' port='-1' passwd='vmm' autoport='yes'/>
   </devices>
 </domain>
 EOF
     virsh define $tmpxml >/dev/null
     [ $? -eq 0 ] || {
-        echo "failed to define $vm"
-        /bin/rm $tmpxml
+        echo "failed to define $vm from $tmpxml"
         return 1
     }
     /bin/rm $tmpxml
@@ -257,8 +262,8 @@ vm_rm() {
         echo "already removed"
         return
     }
-    virsh destroy "$vm" >/dev/null
-    virsh undefine "$vm" >/dev/null
+    virsh destroy "$vm" &>>/dev/null
+    virsh undefine "$vm" &>>/dev/null
     rm $DROOT/img/$vm.*
     update_conf d $vm
     echo "$vm removed"
@@ -295,6 +300,11 @@ vm_ssh() {
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $sshkey $user@$ip
 }
 
+vm_ping() {
+    local vm=$1
+    local ip=$(vm_getip $vm)
+    ping -c3 $ip
+}
 vm_inspect() {
     local vm=$1
     grep "^$vm " $VMLIST
@@ -356,7 +366,7 @@ case $act in
         [ $# -eq 2 ] || usage
         virsh destroy $vm
         ;;
-    inspect)
+    inspect|info)
         [ $# -eq 2 ] || usage
         vm_inspect $vm
         ;;
@@ -367,6 +377,10 @@ case $act in
     ssh)
         [ $# -eq 2 ] || usage
         vm_ssh $vm root
+        ;;
+    ping)
+        [ $# -eq 2 ] || usage
+        vm_ping $vm
         ;;
     console)
         [ $# -eq 2 ] || usage
