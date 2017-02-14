@@ -22,6 +22,32 @@ VMM
 
 1 手工配置好名为 br0 的网桥
 
+```
+# cat /etc/sysconfig/network-scripts/ifcfg-br0
+DEVICE=br0
+TYPE=Bridge
+BOOTPROTO=static
+DEFROUTE=yes
+PEERDNS=yes
+PEERROUTES=yes
+IPV4_FAILURE_FATAL=no
+IPV6INIT=no
+IPV6_AUTOCONF=no
+IPV6_DEFROUTE=no
+NAME=br0
+ONBOOT=yes
+STP=on
+DELAY=0
+IPADDR=192.168.199.122
+NETMASK=255.255.255.0
+GATEWAY=192.168.199.1
+
+# cat /etc/sysconfig/network-scripts/ifcfg-enp3s0f0
+DEVICE=enp3s0f0
+ONBOOT=yes
+BRIDGE=br0
+```
+
 2 修改 vmm 脚本中可分配的起始IP地址及网关掩码等信息
 
 配置说明
