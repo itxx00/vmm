@@ -9,6 +9,7 @@ IMG=CentOS-7-x86_64-GenericCloud.qcow2
 DROOT=/data
 CROOT=$HOME/.vmm
 VMLIST=$CROOT/vms
+VmRootDiskSize=20G
 VmDataDiskSize=50G
 IPSTART=192.168.199.2
 IPEND=192.168.199.99
@@ -185,7 +186,7 @@ create_disk() {
         echo "$vm disk exist,cannot continue"
         return 1
     }
-    qemu-img create -f qcow2 -b $IMG $vm.root >/dev/null || return 1
+    qemu-img create -f qcow2 -b $IMG $vm.root $VmRootDiskSize >/dev/null || return 1
     qemu-img create -f qcow2 $vm.data $VmDataDiskSize >/dev/null || return 1
 }
 

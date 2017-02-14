@@ -24,6 +24,24 @@ VMM
 
 2 修改 vmm 脚本中可分配的起始IP地址及网关掩码等信息
 
+配置说明
+--------
+
+支持自定义系统盘和数据盘大小，修改脚本中
+VmRootDiskSize 和 VmDataDiskSize 两个变量即可
+
+其中，centos7镜像系统盘默认进行了分区，且使用xfs文件系统，可以在镜像中修改
+
+/etc/rc.d/rc.local增加以下命令来自动扩容系统盘容量
+
+```
+yum -y install cloud-utils-growpart
+cat >>/etc/rc.d/rc.local <<EOF
+growpart /dev/vda 1
+xfs_growfs /dev/vda1
+EOF
+```
+
 TODO
 -----
 
