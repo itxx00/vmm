@@ -328,6 +328,17 @@ vm_console() {
     }
 }
 
+vm_state() {
+    local action="$1"
+    local vm
+    [[ $1 = stop ]] && action=shutdown
+    [[ $1 = restart ]] && action=reboot
+    [[ $1 = kill ]] && action=destroy
+    for vm in ${@:2}; do
+        virsh $action $vm
+    done
+}
+
 init_env || die
 act=$1
 vm=$2
@@ -337,35 +348,23 @@ case $act in
         [ $# -eq 2 ] || usage
         vm_create $vm
         ;;
-    rm)
+    rm|del|remove|delete)
         [ $# -eq 2 ] || usage
         vm_rm $vm
         ;;
-    ls)
+    ls|list)
         virsh list --all
         ;;
     active)
         virsh list
         ;;
-    start)
-        [ $# -eq 2 ] || usage
-        virsh start $vm
-        ;;
-    stop)
-        [ $# -eq 2 ] || usage
-        virsh shutdown $vm
-        ;;
-    restart)
-        [ $# -eq 2 ] || usage
-        virsh reboot $vm
+    start|stop|shutdown|restart|reboot|kill|destroy)
+        [ $# -ge 2 ] || usage
+        vm_state $@
         ;;
     status)
         [ $# -eq 2 ] || usage
         virsh domstate $vm
-        ;;
-    kill)
-        [ $# -eq 2 ] || usage
-        virsh destroy $vm
         ;;
     inspect|info)
         [ $# -eq 2 ] || usage
