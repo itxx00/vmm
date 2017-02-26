@@ -7,11 +7,34 @@ VMM
 ---------
 
 ```
-  vmm create vm1  创建名为vm1的虚拟机
-  vmm ssh vm1     自动SSH登陆vm1
-  vmm rm vm1      销毁vm1的配置和存储
-  vmm ls          查看所有虚拟机
+Usage: vmm [OPTIONS] COMMAND [arg...]
 
+Create and manage virtual machines.
+
+Options:
+  --help, -h                        show help
+  --version, -v                     print the version
+
+Commands:
+  active        Print which vm is active
+  create        Create a vm
+  inspect       Inspect information about a vm
+  ip            Get the IP address of a vm
+  kill          Kill a vm
+  ls            List vms
+  restart       Restart a vm
+  rm            Remove a vm
+  ssh           Log into or run a command on a vm with SSH.
+  start         Start a vm
+  status        Get the status of a vm
+  stop          Stop a vm
+  console       Open console of a vm
+  ping          Send ping packages to vm's ip address
+
+e.g.:
+  vmm start vm1         # start one vm
+  vmm start vm{2..10}   # start more vms
+  vmm stop vm{1..3}     # stop vm1 vm2 vm3
 
 ```
 

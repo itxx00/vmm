@@ -44,6 +44,7 @@ Commands:
   status        Get the status of a vm
   stop          Stop a vm
   console       Open console of a vm
+  ping          Send ping packages to vm's ip address
 "
     exit
 }
