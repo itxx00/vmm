@@ -4,8 +4,8 @@
 VERSION=0.1
 MIRROR=http://cloud.centos.org/centos/7/images
 #MIRROR=http://mirrors.aliyun.com/fedora/releases/23/Cloud/x86_64/Images
-IMG=CentOS-7-x86_64-GenericCloud.qcow2
-#IMG=Fedora-Cloud-Base-23-20151030.x86_64.qcow2
+#IMG=CentOS-7-x86_64-GenericCloud.qcow2
+IMG=Fedora-Cloud-Base-26_Beta-1.4.x86_64.qcow2
 DROOT=/data
 CROOT=$HOME/.vmm
 VMLIST=$CROOT/vms
@@ -101,7 +101,7 @@ inject_pwd() {
     local vm="$1"
     local user="$2"
     local pwd="$3"
-    hash=$(python3 -c "import crypt; print(crypt.crypt('$pwd', crypt.mksalt(crypt.METHOD_SHA512)))")
+    hash=$(python -c "import crypt; print(crypt.crypt('$pwd', crypt.mksalt(crypt.METHOD_SHA512)))")
     es_hash=$(echo $hash|sed 's#\/#\\/#g;s#\$#\\$#g')
     virt-edit -d $vm /etc/shadow -e "s/^$user:.*?:/$user:$es_hash:/"
 }
@@ -165,7 +165,10 @@ define_vm() {
       <source bridge='br0'/>
       <model type='virtio'/>
     </interface>
-    <graphics type='vnc' port='-1' passwd='vmm' autoport='yes'/>
+    <graphics type='vnc' port='-1' passwd='vmm' listen='0.0.0.0' autoport='yes'/>
+    <video>
+      <model type='vga' vram='16384'/>
+    </video>
   </devices>
 </domain>
 EOF
@@ -281,7 +284,7 @@ vm_create() {
     define_vm "$vm" || die
     create_disk "$vm" || die
     inject_key "$vm" root || die
-    #inject_pwd "$vm" root centos7
+    inject_pwd "$vm" root toor
     ip=$(gen_ip || die)
     inject_netconf "$vm" "$ip" || die
     update_conf a "$vm" "$ip"
@@ -314,17 +317,20 @@ vm_inspect() {
 
 vm_console() {
     local vm=$1
-    local vncport=$(virsh vncdisplay $vm)
     local password=$RANDOM
+    local vncport=$(virsh vncdisplay $vm)
     [ $? -eq 0 ] || {
         echo "err: cannot get vnc port"
         return 1
     }
-    local cli=$(which vncviewer)
+    if [[ $vncport =~ ^:[0-9]* ]]; then
+        vncport=0.0.0.0$vncport
+    fi
+    local cli=$(which vncviewer 2>/dev/null)
     virsh qemu-monitor-command $vm --hmp change vnc password $password
+    echo "${vncport} password: $password"
     [[ -x $cli ]] && {
-        echo "127.0.0.1${vncport} password: $password"
-        echo $password | $cli -autopass 127.0.0.1${vncport} &
+        echo $password | $cli -autopass ${vncport} &
         return
     }
 }
