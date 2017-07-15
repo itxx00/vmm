@@ -68,8 +68,9 @@ init_env() {
                 bridge-utils libvirt-daemon-system \
                 libguestfs-tools qemu-utils
         elif grep -qi 'fedora\|centos' /etc/os-release; then
+            yum -y install centos-release-qemu-ev
             yum -y install libvirt-daemon libvirt-client dnsmasq ebtables \
-                bridge-utils libguestfs-tools-c qemu-img
+                bridge-utils libguestfs-tools-c qemu-img-ev qemu-kvm-ev
         else
             echo "system not supported yet"
             return 1
