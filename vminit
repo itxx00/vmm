@@ -1,0 +1,41 @@
+#!/bin/bash
+#
+#
+VERSION=0.1
+DROOT=/data
+CROOT=$HOME/.vmm
+VMLIST=$CROOT/vms
+
+usage() {
+    echo "
+Usage: vmminit vm
+"
+    exit
+}
+
+vm_init() {
+    local vm=$1
+    local sshkey=$CROOT/id_rsa
+    local ip=$(vm_getip $vm)
+    cat >/tmp/hosts.tmp <<EOF
+127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4
+::1         localhost localhost.localdomain localhost6 localhost6.localdomain6
+EOF
+    awk '{print $2,$1}' $VMLIST >>/tmp/hosts.tmp
+    echo $vm >/tmp/${vm}.hostname
+    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $sshkey /tmp/${vm}.hostname root@$ip:/tmp/hostname
+    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $sshkey /tmp/hosts.tmp root@$ip:/tmp/
+    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $sshkey $sshkey root@$ip:/root/.ssh/
+    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $sshkey ${sshkey}.pub root@$ip:/root/.ssh/
+    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $sshkey $CROOT/init.sh root@$ip:/tmp/
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $sshkey root@$ip /tmp/init.sh
+}
+
+vm_getip() {
+    local vm=$1
+    grep "^$vm " $VMLIST | awk '{print $2}'
+}
+
+vm=$1
+[[ -n $vm ]] || usage
+vm_init $vm
